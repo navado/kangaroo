@@ -17,8 +17,9 @@ package com.conductor.kafka.hadoop;
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
-import kafka.api.FetchRequest;
+import kafka.api.*;
 import kafka.common.ErrorMapping;
+import kafka.common.TopicAndPartition;
 import kafka.consumer.SimpleConsumer;
 import kafka.message.*;
 
@@ -33,7 +34,9 @@ import org.mockito.invocation.InvocationOnMock;
 import org.mockito.runners.MockitoJUnitRunner;
 import org.mockito.stubbing.Answer;
 
+import scala.Option;
 import scala.collection.Iterator;
+import scala.collection.immutable.Map;
 
 import com.conductor.kafka.Broker;
 import com.conductor.kafka.Partition;
@@ -58,6 +61,7 @@ public class KafkaRecordReaderTest {
     private KafkaInputSplit split;
     private KafkaRecordReader reader;
     private Partition partition;
+    private FetchResponse fetchResponse = mock(FetchResponse.class);;
 
     @Before
     public void setUp() throws Exception {
@@ -65,6 +69,8 @@ public class KafkaRecordReaderTest {
         when(context.getConfiguration()).thenReturn(conf);
         final Job job = mock(Job.class);
         when(job.getConfiguration()).thenReturn(conf);
+
+        when(fetchResponse.messageSet("topic", 0)).thenReturn(mockMessage);
 
         KafkaInputFormat.setConsumerGroup(job, "group");
         KafkaInputFormat.setKafkaSocketTimeoutMs(job, 1000);
@@ -115,8 +121,9 @@ public class KafkaRecordReaderTest {
     public void testContinueItrException() throws Exception {
         doReturn(mockConsumer).when(reader).getConsumer(split, conf);
         reader.initialize(split, context);
-        when(mockConsumer.fetch(any(FetchRequest.class))).thenReturn(mockMessage);
-        when(mockMessage.getErrorCode()).thenReturn(ErrorMapping.InvalidFetchSizeCode());
+        when(mockConsumer.fetch(any(FetchRequest.class))).thenReturn(fetchResponse);
+        when(fetchResponse.hasError()).thenReturn(true);
+        when(fetchResponse.errorCode("topic", 0)).thenReturn(ErrorMapping.InvalidFetchSizeCode());
         reader.continueItr();
         fail();
     }
@@ -125,8 +132,9 @@ public class KafkaRecordReaderTest {
     public void testContinueItrOffsetOutOfRange() throws Exception {
         doReturn(mockConsumer).when(reader).getConsumer(split, conf);
         reader.initialize(split, context);
-        when(mockConsumer.fetch(any(FetchRequest.class))).thenReturn(mockMessage);
-        when(mockMessage.getErrorCode()).thenReturn(ErrorMapping.OffsetOutOfRangeCode());
+        when(mockConsumer.fetch(any(FetchRequest.class))).thenReturn(fetchResponse);
+        when(fetchResponse.hasError()).thenReturn(true);
+        when(fetchResponse.errorCode("topic", 0)).thenReturn(ErrorMapping.OffsetOutOfRangeCode());
         assertFalse("Should be done with split!", reader.continueItr());
     }
 
@@ -134,20 +142,23 @@ public class KafkaRecordReaderTest {
     public void testContinueItr() throws Exception {
         doReturn(mockConsumer).when(reader).getConsumer(split, conf);
         // unfortunately, FetchRequest does not implement equals, so we have to do any(), and validate with answer
-        when(mockConsumer.fetch(any(FetchRequest.class))).thenAnswer(new Answer<ByteBufferMessageSet>() {
+        when(mockConsumer.fetch(any(FetchRequest.class))).thenAnswer(new Answer<FetchResponse>() {
             @Override
-            public ByteBufferMessageSet answer(final InvocationOnMock invocation) throws Throwable {
+            public FetchResponse answer(final InvocationOnMock invocation) throws Throwable {
                 final FetchRequest request = (FetchRequest) invocation.getArguments()[0];
-                assertEquals("topic", request.topic());
-                assertEquals(0, request.partition());
-                assertEquals(0, request.offset());
-                assertEquals(100, request.maxSize());
-                return mockMessage;
+                final Map<TopicAndPartition, PartitionFetchInfo> reqInfo = request.requestInfo();
+
+                final TopicAndPartition topicAndPartition = new TopicAndPartition("topic", 0);
+                assertTrue(reqInfo.contains(topicAndPartition));
+                final Option<PartitionFetchInfo> fetchInfo = reqInfo.get(topicAndPartition);
+                assertEquals(0, fetchInfo.get().offset());
+                assertEquals(100, fetchInfo.get().fetchSize());
+                return fetchResponse;
             }
         });
-        when(mockMessage.getErrorCode()).thenReturn(ErrorMapping.NoError());
+        when(fetchResponse.hasError()).thenReturn(false);
         when(mockMessage.iterator()).thenReturn(mockIterator);
-        when(mockMessage.validBytes()).thenReturn(100l);
+        when(mockMessage.validBytes()).thenReturn(100);
         when(mockIterator.hasNext()).thenReturn(true);
         reader.initialize(split, context);
 
@@ -171,10 +182,10 @@ public class KafkaRecordReaderTest {
 
         // first iteration
         final Iterator<MessageAndOffset> mockIterator1 = mock(Iterator.class);
-        when(mockConsumer.fetch(any(FetchRequest.class))).thenReturn(mockMessage);
-        when(mockMessage.getErrorCode()).thenReturn(ErrorMapping.NoError());
+        when(mockConsumer.fetch(any(FetchRequest.class))).thenReturn(fetchResponse);
+        when(fetchResponse.hasError()).thenReturn(false);
         when(mockMessage.iterator()).thenReturn(mockIterator1);
-        when(mockMessage.validBytes()).thenReturn(2048l);
+        when(mockMessage.validBytes()).thenReturn(2048);
         when(mockIterator1.hasNext()).thenReturn(true);
 
         assertTrue("Should be able to continue iterator!", reader.continueItr());
@@ -192,7 +203,7 @@ public class KafkaRecordReaderTest {
         final Iterator<MessageAndOffset> mockIterator3 = mock(Iterator.class);
         when(mockMessage.iterator()).thenReturn(mockIterator3);
         when(mockIterator3.hasNext()).thenReturn(true);
-        when(mockMessage.validBytes()).thenReturn(1l);
+        when(mockMessage.validBytes()).thenReturn(1);
 
         assertTrue("Should be able to continue iterator!", reader.continueItr());
 

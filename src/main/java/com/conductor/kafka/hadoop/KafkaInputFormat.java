@@ -18,8 +18,11 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
-import kafka.api.OffsetRequest;
-import kafka.consumer.SimpleConsumer;
+import kafka.api.PartitionOffsetRequestInfo;
+import kafka.common.TopicAndPartition;
+import kafka.javaapi.OffsetRequest;
+import kafka.javaapi.OffsetResponse;
+import kafka.javaapi.consumer.SimpleConsumer;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.conf.Configuration;
@@ -33,16 +36,15 @@ import com.conductor.kafka.Broker;
 import com.conductor.kafka.Partition;
 import com.conductor.kafka.zk.ZkUtils;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
+import com.google.common.collect.*;
 
 /**
  * An {@link InputFormat} that splits up Kafka {@link Broker}-{@link Partition}s further into a set of offsets.
  * 
  * <p/>
- * Specifically, it will call {@link SimpleConsumer#getOffsetsBefore(String, int, long, int)} to retrieve a list of
- * valid offsets, and create {@code N} number of {@link InputSplit}s per {@link Broker}-{@link Partition}, where
- * {@code N} is the number of offsets returned by {@link SimpleConsumer#getOffsetsBefore(String, int, long, int)}.
+ * Specifically, it will call {@link SimpleConsumer#getOffsetsBefore} to retrieve a list of valid offsets, and create
+ * {@code N} number of {@link InputSplit}s per {@link Broker}-{@link Partition}, where {@code N} is the number of
+ * offsets returned by {@link SimpleConsumer#getOffsetsBefore}.
  * 
  * <p/>
  * Thanks to <a href="https://github.com/miniway">Dongmin Yu</a> for providing the inspiration for this code.
@@ -205,12 +207,18 @@ public class KafkaInputFormat extends InputFormat<LongWritable, BytesWritable> {
     @VisibleForTesting
     List<Long> getOffsets(final SimpleConsumer consumer, final String topic, final int partitionNum,
             final long lastCommit, final long asOfTime, final int maxSplitsPerPartition) {
+        // TODO: take advantage of new API, which allows you to request offsets for multiple topic-partitions.
+
         // all offsets that exist for this partition (in descending order)
-        final long[] allOffsets = consumer.getOffsetsBefore(topic, partitionNum, OffsetRequest.LatestTime(),
+        final OffsetRequest allReq = toOffsetRequest(topic, partitionNum, kafka.api.OffsetRequest.LatestTime(),
                 Integer.MAX_VALUE);
+        final OffsetResponse allOffsetsResponse = consumer.getOffsetsBefore(allReq);
+        final long[] allOffsets = allOffsetsResponse.offsets(topic, partitionNum);
 
         // this gets us an offset that is strictly before 'asOfTime', or zero if none exist before that time
-        final long[] offsetsBeforeAsOf = consumer.getOffsetsBefore(topic, partitionNum, asOfTime, 1);
+        final OffsetRequest requestBeforeAsOf = toOffsetRequest(topic, partitionNum, asOfTime, 1);
+        final OffsetResponse offsetsBeforeAsOfResponse = consumer.getOffsetsBefore(requestBeforeAsOf);
+        final long[] offsetsBeforeAsOf = offsetsBeforeAsOfResponse.offsets(topic, partitionNum);
         final long includeAfter = offsetsBeforeAsOf.length == 1 ? offsetsBeforeAsOf[0] : 0;
 
         // note that the offsets are in descending order
@@ -235,6 +243,16 @@ public class KafkaInputFormat extends InputFormat<LongWritable, BytesWritable> {
         return result;
     }
 
+    @VisibleForTesting
+    static OffsetRequest toOffsetRequest(final String topic, final int partitionNum, final long asOfTime,
+            final int numOffsets) {
+        final TopicAndPartition topicAndPartition = new TopicAndPartition(topic, partitionNum);
+        final PartitionOffsetRequestInfo partitionInfoReq = new PartitionOffsetRequestInfo(asOfTime, numOffsets);
+        final Map<TopicAndPartition, PartitionOffsetRequestInfo> requestInfo = ImmutableMap.of(topicAndPartition,
+                partitionInfoReq);
+        return new OffsetRequest(requestInfo, kafka.api.OffsetRequest.CurrentVersion(), "KafkaInputFormat");
+    }
+
     /*
      * We make the following two methods visible for testing so that we can mock these components out in unit tests
      */
@@ -242,7 +260,7 @@ public class KafkaInputFormat extends InputFormat<LongWritable, BytesWritable> {
     @VisibleForTesting
     SimpleConsumer getConsumer(final Broker broker) {
         return new SimpleConsumer(broker.getHost(), broker.getPort(), DEFAULT_SOCKET_TIMEOUT_MS,
-                DEFAULT_BUFFER_SIZE_BYTES);
+                DEFAULT_BUFFER_SIZE_BYTES, "KafkaInputFormat");
     }
 
     @VisibleForTesting
@@ -401,7 +419,7 @@ public class KafkaInputFormat extends InputFormat<LongWritable, BytesWritable> {
      *            the job being configured.
      * @param timestamp
      *            the timestamp.
-     * @see SimpleConsumer#getOffsetsBefore(String, int, long, int)
+     * @see SimpleConsumer#getOffsetsBefore
      */
     public static void setIncludeOffsetsAfterTimestamp(final Job job, final long timestamp) {
         job.getConfiguration().setLong("kafka.timestamp.offset", timestamp);

@@ -22,7 +22,8 @@ import java.util.Arrays;
 import java.util.List;
 
 import kafka.api.OffsetRequest;
-import kafka.consumer.SimpleConsumer;
+import kafka.javaapi.OffsetResponse;
+import kafka.javaapi.consumer.SimpleConsumer;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.InputSplit;
@@ -141,9 +142,18 @@ public class KafkaInputFormatTest {
     public void testGetOffsets() throws Exception {
         final SimpleConsumer consumer = mock(SimpleConsumer.class);
 
+        final OffsetResponse responseAll = mock(OffsetResponse.class);
         final long[] offsets = { 101, 91, 81, 71, 61, 51, 41, 31, 21, 11 };
-        when(consumer.getOffsetsBefore("topic", 1, OffsetRequest.LatestTime(), Integer.MAX_VALUE)).thenReturn(offsets);
-        when(consumer.getOffsetsBefore("topic", 1, 0, 1)).thenReturn(new long[] {});
+        when(responseAll.offsets("topic", 1)).thenReturn(offsets);
+
+        final kafka.javaapi.OffsetRequest offsetRequestAll = KafkaInputFormat.toOffsetRequest("topic", 1,
+                OffsetRequest.LatestTime(), Integer.MAX_VALUE);
+        when(consumer.getOffsetsBefore(offsetRequestAll)).thenReturn(responseAll);
+
+        final OffsetResponse responseAsOf = mock(OffsetResponse.class);
+        when(responseAsOf.offsets("topic", 1)).thenReturn(new long[] {});
+        final kafka.javaapi.OffsetRequest offsetRequestAsOf = KafkaInputFormat.toOffsetRequest("topic", 1, 0, 1);
+        when(consumer.getOffsetsBefore(offsetRequestAsOf)).thenReturn(responseAsOf);
 
         final KafkaInputFormat inputFormat = new KafkaInputFormat();
 
@@ -162,12 +172,15 @@ public class KafkaInputFormatTest {
 
         // case 2: lastCommit of 52, asOfTime 51 -> still include last offsets
         final int asOfTime = 999;
-        when(consumer.getOffsetsBefore("topic", 1, asOfTime, 1)).thenReturn(new long[] { 51 });
+        final kafka.javaapi.OffsetRequest requestAsOf999 = KafkaInputFormat.toOffsetRequest("topic", 1, asOfTime, 1);
+        when(responseAsOf.offsets("topic", 1)).thenReturn(new long[] { 51 });
+        when(consumer.getOffsetsBefore(requestAsOf999)).thenReturn(responseAsOf);
         actual = inputFormat.getOffsets(consumer, "topic", 1, lastCommit, asOfTime, Integer.MAX_VALUE);
         compareArrayContents(expected, actual);
 
         // case 3: lastCommit of 52, asOfTime 52 -> don't include last offsets
-        when(consumer.getOffsetsBefore("topic", 1, asOfTime, 1)).thenReturn(new long[] { 52 });
+        when(responseAsOf.offsets("topic", 1)).thenReturn(new long[] { 52 });
+        when(consumer.getOffsetsBefore(requestAsOf999)).thenReturn(responseAsOf);
         expected = Arrays.copyOfRange(offsets, 0, 5);
         actual = inputFormat.getOffsets(consumer, "topic", 1, lastCommit, asOfTime, Integer.MAX_VALUE);
         compareArrayContents(expected, actual);

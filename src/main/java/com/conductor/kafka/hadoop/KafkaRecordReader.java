@@ -19,7 +19,7 @@ import static com.conductor.kafka.hadoop.KafkaInputFormat.*;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-import kafka.api.FetchRequest;
+import kafka.api.*;
 import kafka.common.ErrorMapping;
 import kafka.consumer.SimpleConsumer;
 import kafka.message.*;
@@ -167,18 +167,22 @@ public class KafkaRecordReader extends RecordReader<LongWritable, BytesWritable>
             final int theFetchSize = (fetchSize > remaining) ? (int) remaining : fetchSize;
             LOG.debug(String.format("%s fetching %d bytes starting at offset %d", split.toString(), theFetchSize,
                     currentOffset));
-            final FetchRequest request = new FetchRequest(split.getPartition().getTopic(), split.getPartition()
-                    .getPartId(), currentOffset, theFetchSize);
-            final ByteBufferMessageSet msg = consumer.fetch(request);
-            final int errorCode = msg.getErrorCode();
-            if (errorCode == ErrorMapping.OffsetOutOfRangeCode()) {
-                return false;
+            final String topic = split.getPartition().getTopic();
+            final int partition = split.getPartition().getPartId();
+            final FetchRequest request = new FetchRequestBuilder()
+                    .addFetch(topic, partition, currentOffset, theFetchSize).clientId("KafkaRecordReader").build();
+            final FetchResponse fetchResponse = consumer.fetch(request);
+            if (fetchResponse.hasError()) {
+                final short code = fetchResponse.errorCode(topic, partition);
+                if (code == ErrorMapping.OffsetOutOfRangeCode()) {
+                    return false;
+                }
+                ErrorMapping.maybeThrowException(code);
             }
-            if (errorCode != ErrorMapping.NoError()) {
-                ErrorMapping.maybeThrowException(errorCode);
-            } // --> else we try to grab the next iterator
-            currentMessageItr = msg.iterator();
-            currentOffset += msg.validBytes();
+
+            final ByteBufferMessageSet byteBufferMessageSet = fetchResponse.messageSet(topic, partition);
+            currentMessageItr = byteBufferMessageSet.iterator();
+            currentOffset += byteBufferMessageSet.validBytes();
         }
         return canCallNext();
     }
@@ -212,7 +216,7 @@ public class KafkaRecordReader extends RecordReader<LongWritable, BytesWritable>
     @VisibleForTesting
     SimpleConsumer getConsumer(final KafkaInputSplit split, final Configuration conf) {
         return new SimpleConsumer(split.getPartition().getBroker().getHost(), split.getPartition().getBroker()
-                .getPort(), getKafkaSocketTimeoutMs(conf), getKafkaBufferSizeBytes(conf));
+                .getPort(), getKafkaSocketTimeoutMs(conf), getKafkaBufferSizeBytes(conf), "kafkaInputFormat");
     }
 
     @VisibleForTesting
