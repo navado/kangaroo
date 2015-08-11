@@ -8,6 +8,7 @@ Currently, Kangaroo includes:
 1. A scalable [Kafka input format](#kafka)
 2. Several [FileInputFormats optimized for S3 input data](#s3).
 3. A input format for [distributed task execution](#wrtiablevalue)
+4. A [compression codec](#codec) for the [framing format](https://github.com/google/snappy/blob/master/framing_format.txt) of Snappy
 
 # Setting up Kangaroo
 
@@ -211,3 +212,14 @@ MultithreadedMapper.setMapperClass(job, MyComputationalMapper.class); // your ac
 MultithreadedMapper.setNumberOfThreads(job, 10); // 10 threads per mapper
 
 ```
+
+## <a name="codec"></a>Snappy Framing Compression Codec
+`com.conductor.hadoop.compress.SnappyFramedCodec` will allow your Map/Reduce jobs to read and write files compressed in 
+the Snappy framing format. Firstly, make sure that you set the following hadoop configuration properties accordingly
+(property names may vary by distribution, [the below are for CDH4/YARN](http://www.cloudera.com/content/cloudera/en/documentation/cdh4/latest/CDH4-Installation-Guide/cdh4ig_topic_23_3.html)):
+
+| Property Name | Meaning | Optional? | Value |
+| ------------- | ------- | --------- | ----- |
+| `io.compression.codecs` | Registry of available compression codecs | no | `...,com.conductor.hadoop.compress.SnappyFramedCodec,...` |
+| `mapred.map.output.compression.codec` | Compression codec for intermediate (map) output | yes, except for map-only jobs | `com.conductor.hadoop.compress.SnappyFramedCodec` |
+| `mapred.output.compression.codec` | Compression codec for final (reduce) output | no | `com.conductor.hadoop.compress.SnappyFramedCodec` |
