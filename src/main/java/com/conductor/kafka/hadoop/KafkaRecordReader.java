@@ -89,7 +89,6 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
         this.split = inputSplit;
         this.start = inputSplit.getStartOffset();
         this.pos = inputSplit.getStartOffset();
-        this.currentOffset = inputSplit.getStartOffset();
         this.end = inputSplit.getEndOffset();
         this.fetchSize = KafkaInputFormat.getKafkaFetchSizeBytes(conf);
         this.consumer = getConsumer(inputSplit, conf);
