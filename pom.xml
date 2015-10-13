@@ -14,7 +14,7 @@
         <hadoop.version>2.6.0</hadoop.version>
         <guava.version>12.0.1</guava.version>
         <slf4j.version>1.6.1</slf4j.version>
-	<zk.version>0.1</zk.version>
+	<zk.version>0.6</zk.version>
 	<dist.bucketName>nestlogic-maven-repo</dist.bucketName>
     </properties>
     <distributionManagement>
