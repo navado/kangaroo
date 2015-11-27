@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
+import com.conductor.hadoop.KafkaMessageWithTopicWritable;
 import kafka.api.PartitionOffsetRequestInfo;
 import kafka.common.TopicAndPartition;
 import kafka.javaapi.OffsetRequest;
@@ -58,7 +59,7 @@ import com.google.common.collect.*;
  * 
  * @author <a href="mailto:cgreen@conductor.com">Casey Green</a>
  */
-public class KafkaInputFormat extends InputFormat<LongWritable, BytesWritable> {
+public class KafkaInputFormat extends InputFormat<LongWritable, KafkaMessageWithTopicWritable> {
 
     private static final Logger LOG = LoggerFactory.getLogger(KafkaInputFormat.class);
 
@@ -96,8 +97,8 @@ public class KafkaInputFormat extends InputFormat<LongWritable, BytesWritable> {
     public static final long DEFAULT_INCLUDE_OFFSETS_AFTER_TIMESTAMP = 0;
 
     @Override
-    public RecordReader<LongWritable, BytesWritable> createRecordReader(final InputSplit inputSplit,
-            final TaskAttemptContext taskAttemptContext) throws IOException, InterruptedException {
+    public RecordReader<LongWritable, KafkaMessageWithTopicWritable> createRecordReader(final InputSplit inputSplit,
+                                                                                        final TaskAttemptContext taskAttemptContext) throws IOException, InterruptedException {
         return new KafkaRecordReader();
     }
 
