@@ -51,7 +51,7 @@ import com.google.common.collect.Sets;
  * 
  * @author <a href="mailto:cgreen@conductor.com">Casey Green</a>
  */
-public class MultipleKafkaInputFormat extends InputFormat<LongWritable, BytesWritable> {
+public class MultipleKafkaInputFormat extends InputFormat<LongWritable, KafkaMessageWithTopicWritable> {
 
     static final Logger LOG = LoggerFactory.getLogger(KafkaInputFormat.class);
 
@@ -104,13 +104,13 @@ public class MultipleKafkaInputFormat extends InputFormat<LongWritable, BytesWri
      * {@inheritDoc}
      */
     @Override
-    public RecordReader<LongWritable, BytesWritable> createRecordReader(final InputSplit split,
+    public RecordReader<LongWritable, KafkaMessageWithTopicWritable> createRecordReader(final InputSplit split,
             final TaskAttemptContext context) throws IOException, InterruptedException {
         final TaggedInputSplit taggedInputSplit = (TaggedInputSplit) split;
         final TaskAttemptContext taskAttemptContextClone = new TaskAttemptContextImpl(taggedInputSplit.getConf(),
                 context.getTaskAttemptID());
         taskAttemptContextClone.setStatus(context.getStatus());
-        return new DelegatingRecordReader<LongWritable, BytesWritable>(split, taskAttemptContextClone);
+        return new DelegatingRecordReader(split, taskAttemptContextClone);
     }
 
     /**

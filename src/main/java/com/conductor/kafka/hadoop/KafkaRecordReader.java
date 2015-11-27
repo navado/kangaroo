@@ -19,6 +19,8 @@ import static com.conductor.kafka.hadoop.KafkaInputFormat.*;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+import com.conductor.hadoop.KafkaMessageWithTopicWritable;
+import com.conductor.hadoop.Tuple;
 import kafka.api.*;
 import kafka.common.ErrorMapping;
 import kafka.consumer.SimpleConsumer;
@@ -26,8 +28,8 @@ import kafka.message.*;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,15 +56,18 @@ import com.google.common.annotations.VisibleForTesting;
  * 
  * @author <a href="mailto:cgreen@conductor.com">Casey Green</a>
  */
-public class KafkaRecordReader extends RecordReader<LongWritable, BytesWritable> {
+// Elena
+public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWithTopicWritable> {
     private static final Logger LOG = LoggerFactory.getLogger(KafkaInputFormat.class);
 
     private Configuration conf;
     private KafkaInputSplit split;
     private SimpleConsumer consumer;
-    private Iterator<MessageAndOffset> currentMessageItr;
+    private Tuple currentMessageItr;
+    //private Tuple currentMessageItr = new Tuple();
+    //private Iterator<MessageAndOffset> currentMessageItr;
     private LongWritable key;
-    private BytesWritable value;
+    private KafkaMessageWithTopicWritable value;
     private long start;
     private long end;
     private long pos;
@@ -112,7 +117,7 @@ public class KafkaRecordReader extends RecordReader<LongWritable, BytesWritable>
      * {@inheritDoc}
      */
     @Override
-    public BytesWritable getCurrentValue() throws IOException, InterruptedException {
+    public KafkaMessageWithTopicWritable getCurrentValue() throws IOException, InterruptedException {
         return value;
     }
 
@@ -136,14 +141,17 @@ public class KafkaRecordReader extends RecordReader<LongWritable, BytesWritable>
             key = new LongWritable();
         }
         if (value == null) {
-            value = new BytesWritable();
+            value = new KafkaMessageWithTopicWritable();
         }
         if (continueItr()) {
-            final MessageAndOffset msg = getCurrentMessageItr().next();
+            Tuple cmi = getCurrentMessageItr();
+            final MessageAndOffset msg = cmi.y.next();
             final long msgOffset = msg.offset();
             final Message message = msg.message();
             final ByteBuffer buffer = message.payload();
-            value.set(buffer.array(), buffer.arrayOffset(), message.payloadSize());
+
+            value.getContent().set(buffer.array(), buffer.arrayOffset(), message.payloadSize());
+            value.setTopicId(new Text(cmi.x));
             key.set(msgOffset);
             pos = msgOffset;
             return true;
@@ -180,14 +188,14 @@ public class KafkaRecordReader extends RecordReader<LongWritable, BytesWritable>
             }
 
             final ByteBufferMessageSet byteBufferMessageSet = fetchResponse.messageSet(topic, partition);
-            currentMessageItr = byteBufferMessageSet.iterator();
+            currentMessageItr = new Tuple(topic, byteBufferMessageSet.iterator());
         }
         return canCallNext();
     }
 
     @VisibleForTesting
     boolean canCallNext() {
-        return getCurrentMessageItr() != null && getCurrentMessageItr().hasNext();
+        return getCurrentMessageItr() != null && getCurrentMessageItr().y != null && getCurrentMessageItr().y.hasNext();
     }
 
     @VisibleForTesting
@@ -231,7 +239,7 @@ public class KafkaRecordReader extends RecordReader<LongWritable, BytesWritable>
         return split;
     }
 
-    public Iterator<MessageAndOffset> getCurrentMessageItr() {
+    public Tuple getCurrentMessageItr() {
         return currentMessageItr;
     }
 

@@ -121,7 +121,8 @@ public class TaggedInputSplit extends InputSplit implements Configurable, Writab
         inputSplit = ReflectionUtils.newInstance(inputSplitClass, conf);
         SerializationFactory factory = new SerializationFactory(conf);
         Deserializer deserializer = factory.getDeserializer(inputSplitClass);
-        deserializer.open((DataInputStream) in);
+        //deserializer.open((DataInputStream) in);
+        deserializer.open((InputStream)in);
         inputSplit = (InputSplit) deserializer.deserialize(inputSplit);
     }
 
@@ -141,7 +142,7 @@ public class TaggedInputSplit extends InputSplit implements Configurable, Writab
         Text.writeString(out, mapperClass.getName());
         SerializationFactory factory = new SerializationFactory(conf);
         Serializer serializer = factory.getSerializer(inputSplitClass);
-        serializer.open((DataOutputStream) out);
+        serializer.open((ObjectOutputStream) out);
         serializer.serialize(inputSplit);
     }
 
