@@ -17,6 +17,7 @@
 	<zk.version>0.7</zk.version>
 	<dist.bucketName>nestlogic-maven-repo</dist.bucketName>
         <aws.sdk.version>1.9.3</aws.sdk.version>
+	<dist.bucketName>nestlogic-maven-repo</dist.bucketName>
     </properties>
     <distributionManagement>
         <snapshotRepository>
