@@ -104,6 +104,11 @@
             <version>${aws.sdk.version}</version>
             <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>org.json</groupId>
+            <artifactId>json</artifactId>
+            <version>20140107</version>
+        </dependency>
 
         <!-- Snappy -->
         <dependency>
