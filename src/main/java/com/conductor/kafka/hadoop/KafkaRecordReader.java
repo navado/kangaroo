@@ -64,14 +64,13 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
     private KafkaInputSplit split;
     private SimpleConsumer consumer;
     private Tuple currentMessageItr;
-    //private Tuple currentMessageItr = new Tuple();
-    //private Iterator<MessageAndOffset> currentMessageItr;
     private LongWritable key;
     private KafkaMessageWithTopicWritable value;
     private long start;
     private long end;
     private long pos;
     private int fetchSize;
+    private boolean first;
 
     /**
      * {@inheritDoc}
@@ -92,6 +91,8 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
         this.end = inputSplit.getEndOffset();
         this.fetchSize = KafkaInputFormat.getKafkaFetchSizeBytes(conf);
         this.consumer = getConsumer(inputSplit, conf);
+
+        this.first = true;
     }
 
     /**
@@ -168,8 +169,9 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
      */
     @VisibleForTesting
     boolean continueItr() {
-        final long remaining = end - pos -1; // we exclude the last element. A split 10-20 means elements from 10 to 19.
-        if (!canCallNext() && remaining > 0) {
+        final long remaining = end - pos - 1; // // we exclude the last element. A split 10-20 means elements from 10 to 19.
+        if (!canCallNext() && (remaining > 0 || first)) {
+            first = false;
             LOG.debug(String.format("%s fetching %d bytes starting at offset %d",
                     split.toString(), fetchSize, pos));
             final String topic = split.getPartition().getTopic();
