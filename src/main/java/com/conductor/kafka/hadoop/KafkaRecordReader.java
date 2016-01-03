@@ -28,6 +28,7 @@ import kafka.message.*;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.*;
@@ -150,8 +151,10 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
             final long msgOffset = msg.offset();
             final Message message = msg.message();
             final ByteBuffer buffer = message.payload();
-
-            value.getContent().set(buffer.array(), buffer.arrayOffset(), message.payloadSize());
+            byte[] bytes = new byte[buffer.limit()];
+            buffer.get(bytes);
+            BytesWritable bytesWritable = new BytesWritable(bytes);
+            value.setContent(bytesWritable);
             value.setTopicId(new Text(cmi.x));
             key.set(msgOffset);
             pos = msgOffset;
