@@ -15,6 +15,7 @@
 package com.conductor.kafka.hadoop;
 
 import java.io.*;
+import java.util.List;
 
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.mapreduce.InputSplit;
@@ -32,10 +33,10 @@ import com.conductor.kafka.Partition;
  */
 public class KafkaInputSplit extends InputSplit implements Writable {
 
-    private Partition partition;
-    private long startOffset;
-    private long endOffset;
-    private boolean partitionCommitter;
+    protected Partition partition;
+    protected long startOffset;
+    protected long endOffset;
+    protected boolean partitionCommitter;
 
     /**
      * The {@link Writable} constructor; use {@link #KafkaInputSplit(Partition, long, long, boolean)}.

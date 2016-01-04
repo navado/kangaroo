@@ -32,6 +32,7 @@ import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.*;
+import org.apache.hadoop.yarn.util.SystemClock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -73,6 +74,8 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
     private int fetchSize;
     private boolean first;
 
+    private boolean multiOffset = false;
+
     /**
      * {@inheritDoc}
      */
@@ -83,16 +86,24 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
             throw new IllegalArgumentException("Expected an InputSplit of type KafkaInputSplit but got "
                     + split.getClass());
         }
-
-        final KafkaInputSplit inputSplit = (KafkaInputSplit) split;
         this.conf = context.getConfiguration();
-        this.split = inputSplit;
-        this.start = inputSplit.getStartOffset();
-        this.pos = inputSplit.getStartOffset();
-        this.end = inputSplit.getEndOffset();
-        this.fetchSize = KafkaInputFormat.getKafkaFetchSizeBytes(conf);
-        this.consumer = getConsumer(inputSplit, conf);
 
+        if (split instanceof KafkaMultiOffsetSplit) {
+            multiOffset = true;
+            final KafkaMultiOffsetSplit inputSplit = (KafkaMultiOffsetSplit) split;
+            this.split = inputSplit;
+            this.consumer = getConsumer(inputSplit, conf);
+        }
+        else {
+            final KafkaInputSplit inputSplit = (KafkaInputSplit) split;
+            this.split = inputSplit;
+            this.consumer = getConsumer(inputSplit, conf);
+        }
+
+        this.start = this.split.getStartOffset();
+        this.pos = this.split.getStartOffset();
+        this.end = this.split.getEndOffset();
+        this.fetchSize = KafkaInputFormat.getKafkaFetchSizeBytes(conf);
         this.first = true;
     }
 
@@ -173,7 +184,9 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
     @VisibleForTesting
     boolean continueItr() {
         final long remaining = end - pos - 1; // // we exclude the last element. A split 10-20 means elements from 10 to 19.
+
         if (!canCallNext() && (remaining > 0 || first)) {
+            handleMultiOffsetSplit();
             first = false;
             LOG.debug(String.format("%s fetching %d bytes starting at offset %d",
                     split.toString(), fetchSize, pos));
@@ -201,6 +214,27 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
     @VisibleForTesting
     boolean canCallNext() {
         return getCurrentMessageItr() != null && getCurrentMessageItr().y != null && getCurrentMessageItr().y.hasNext();
+    }
+
+    void handleMultiOffsetSplit(){
+        /* if the split we handle is multi-offset split */
+        if(this.multiOffset){
+            /* try to shift the offset to next one reported by Kafka */
+            KafkaMultiOffsetSplit multiOffsetSplit = (KafkaMultiOffsetSplit)split;
+            boolean shouldShiftOffset = (multiOffsetSplit.getCurrentOffsetUpperLimit() - pos) == 1;
+            if(shouldShiftOffset) {
+                long nextOffset = multiOffsetSplit.shiftOffset();
+                LOG.debug("Shifting offset, pos = " + pos + "; nextOffset = " + nextOffset);
+                /* if the shift succeed, set the pos to this offset */
+                if (nextOffset != KafkaMultiOffsetSplit.SPLIT_EOF) {
+                    pos = nextOffset;
+                } else {
+                    // set the pos to point to the end of record
+                    LOG.debug("Shifting offset failed due to EOF, pos = " + pos);
+                    pos = end - 1;
+                }
+            }
+        }
     }
 
     @VisibleForTesting

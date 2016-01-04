@@ -26,10 +26,12 @@ import kafka.javaapi.OffsetResponse;
 import kafka.javaapi.consumer.SimpleConsumer;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.logging.Log;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.mapreduce.*;
+import org.apache.hadoop.yarn.util.SystemClock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -91,6 +93,11 @@ public class KafkaInputFormat extends InputFormat<LongWritable, KafkaMessageWith
      * Default maximum number of partitions per split.
      */
     public static final int DEFAULT_MAX_SPLITS_PER_PARTITION = Integer.MAX_VALUE;
+    /**
+     * Default Kafka splitting single partition flag, true.
+     */
+    public static final boolean DEFAULT_PARTITION_SPLITTING_FLAG = false;
+
     /**
      * Default timestamp to include
      */
@@ -172,7 +179,7 @@ public class KafkaInputFormat extends InputFormat<LongWritable, KafkaMessageWith
         final Map<Broker, SimpleConsumer> consumers = Maps.newHashMap();
         try {
             for (final Partition partition : zk.getPartitions(topic)) {
-
+                LOG.debug("Partition \"" + partition.getPartId() + "\" for topic \"" + topic + "\"");
                 // cache the consumer connections - each partition will make use of each broker consumer
                 final Broker broker = partition.getBroker();
                 if (!consumers.containsKey(broker)) {
@@ -183,18 +190,41 @@ public class KafkaInputFormat extends InputFormat<LongWritable, KafkaMessageWith
                 final List<Long> offsets = getOffsets(consumers.get(broker), topic, partition.getPartId(),
                         zk.getLastCommit(group, partition), getIncludeOffsetsAfterTimestamp(conf),
                         getMaxSplitsPerPartition(conf), conf);
-                for (int i = 0; i < offsets.size() - 1; i++) {
+                // check whether splitting single partition is disabled?
+                boolean splittingDisabled = getKafkaDisablePartitionSplits(conf);
+                LOG.debug("Offsets for topic \"" + topic + "\"; partition \"" + partition.getPartId() + "\":");
+                for(Long offset : offsets){
+                    LOG.debug("" + offset);
+                }
+
+
+                if(splittingDisabled){
                     // ( offsets in descending order )
-                    final long start = offsets.get(i + 1);
-                    final long end = offsets.get(i);
-                    // since the offsets are in descending order, the first offset in the list is the largest offset for
-                    // the current partition. This split will be in charge of committing the offset for this partition.
-                    final boolean partitionCommitter = (i == 0);
-                    final InputSplit split = new KafkaInputSplit(partition, start, end, partitionCommitter);
-                    LOG.debug("Created input split: " + split);
+                    final long end   = offsets.get(0);
+                    final long start = offsets.get(offsets.size() - 1);
+
+                    // the single split is always partition committer
+                    final boolean partitionCommitter = true;
+                    // create single split with the min offset as the start and max offset as the end
+                    final InputSplit split = new KafkaMultiOffsetSplit(partition, start, end, partitionCommitter, Lists.reverse(offsets));
+
+                    LOG.debug("Created multi-offset input split: " + split);
                     splits.add(split);
                 }
-            }
+                else{
+                    for (int i = 0; i < offsets.size() - 1; i++) {
+                        // ( offsets in descending order )
+                        final long start = offsets.get(i + 1);
+                        final long end = offsets.get(i);
+                        // since the offsets are in descending order, the first offset in the list is the largest offset for
+                        // the current partition. This split will be in charge of committing the offset for this partition.
+                        final boolean partitionCommitter = (i == 0);
+                        final InputSplit split = new KafkaInputSplit(partition, start, end, partitionCommitter);
+                        LOG.debug("Created input split: " + split);
+                        splits.add(split);
+                    }
+                }
+                            }
         } finally {
             // close resources
             IOUtils.closeQuietly(zk);
@@ -229,7 +259,7 @@ public class KafkaInputFormat extends InputFormat<LongWritable, KafkaMessageWith
             if (offset > lastCommit && offset > includeAfter) {
                 result.add(offset);
             } else if (lastCommit == -1L && offset > includeAfter) {
-                // nothing commited yet, so consume everything
+                // nothing committed yet, so consume everything
                 result.add(offset);
             } else {
                 // we add "lastCommit" if it is after "includeAfter"
@@ -468,6 +498,31 @@ public class KafkaInputFormat extends InputFormat<LongWritable, KafkaMessageWith
      */
     public static int getMaxSplitsPerPartition(final Configuration conf) {
         return conf.getInt("kafka.max.splits.per.partition", DEFAULT_MAX_SPLITS_PER_PARTITION);
+    }
+
+    /**
+     * Disables Kafka partition splitting (meant, when splits are disabled, we always have single split per partition)
+     *
+     * @param job
+     *            the job being configured.
+     * @param flag
+     *            boolean flag, indicates whether the splitting single partition should be disabled
+     *            true  - disabled
+     *            false - enabled
+     */
+    public static void setKafkaDisablePartitionSplits(final Job job, final boolean flag) {
+        job.getConfiguration().setBoolean("kafka.partititon.splits.disable", flag);
+    }
+
+    /**
+     * Gets Kafka partition splitting flag, when the splitting is disabled, we always have single split per partition
+     *
+     * @param conf
+     *            the job conf
+     * @return Kafka partition splitting flag
+     */
+    public static boolean getKafkaDisablePartitionSplits(final Configuration conf) {
+        return conf.getBoolean("kafka.partititon.splits.disable", DEFAULT_PARTITION_SPLITTING_FLAG);
     }
 
     /**
