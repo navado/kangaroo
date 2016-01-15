@@ -84,7 +84,7 @@ public class KafkaRecordReaderTest {
 
         final Broker broker = new Broker("localhost", 9092, 1);
         this.partition = new Partition("topic", 0, broker);
-        split = new KafkaInputSplit(partition, 0, 100, true);
+        split = new KafkaInputSplit(partition, 0, 100, true, "");
 
         reader = spy(new KafkaRecordReader());
         reader.initialize(split, context);

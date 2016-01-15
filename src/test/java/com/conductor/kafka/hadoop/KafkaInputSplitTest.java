@@ -32,7 +32,7 @@ public class KafkaInputSplitTest {
     public void testSerialization() throws Exception {
         final Broker broker = new Broker("127.0.0.1", 9092, 1);
         final Partition partition = new Partition("topic_name", 0, broker);
-        final KafkaInputSplit split = new KafkaInputSplit(partition, 0, 10l, false);
+        final KafkaInputSplit split = new KafkaInputSplit(partition, 0, 10l, false, "");
         final ByteArrayDataOutput out = ByteStreams.newDataOutput();
         split.write(out);
 

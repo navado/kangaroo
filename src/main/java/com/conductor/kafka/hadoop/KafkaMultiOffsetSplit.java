@@ -27,14 +27,14 @@ public class KafkaMultiOffsetSplit extends KafkaInputSplit {
     private int currentOffsetIndex = -1;
 
     /**
-     * The {@link Writable} constructor; use {@link #KafkaMultiOffsetSplit(Partition, long, long, boolean, List<Long>)}.
+     * The {@link Writable} constructor; use {@link #KafkaMultiOffsetSplit(Partition, long, long, boolean, List<Long>, String)}.
      */
     public KafkaMultiOffsetSplit() {
     }
 
     public KafkaMultiOffsetSplit(final Partition partition, final long startOffset, final long endOffset,
-                           final boolean partitionCommitter, List<Long> offsets) {
-        super(partition, startOffset, endOffset, partitionCommitter);
+                           final boolean partitionCommitter, List<Long> offsets, String location) {
+        super(partition, startOffset, endOffset, partitionCommitter, location);
 
         // initialize offsets covered by split
         this.offsets = new ArrayList<>(offsets);
@@ -42,6 +42,7 @@ public class KafkaMultiOffsetSplit extends KafkaInputSplit {
         this.offsetsLength = offsets.size();
         // set the current offset index
         this.currentOffsetIndex = this.offsetsLength > 0 ? 0 : -1;
+        this.location = location;
     }
 
     public int getCurrentOffsetIndex() {

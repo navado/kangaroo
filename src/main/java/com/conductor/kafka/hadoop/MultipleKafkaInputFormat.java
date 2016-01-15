@@ -212,10 +212,8 @@ public class MultipleKafkaInputFormat extends InputFormat<LongWritable, KafkaMes
                 return false;
             if (mapper != null ? !mapper.equals(topicConf.mapper) : topicConf.mapper != null)
                 return false;
-            if (topic != null ? !topic.equals(topicConf.topic) : topicConf.topic != null)
-                return false;
+            return topic != null ? topic.equals(topicConf.topic) : topicConf.topic == null;
 
-            return true;
         }
 
         @Override

@@ -26,12 +26,13 @@ import kafka.javaapi.OffsetResponse;
 import kafka.javaapi.consumer.SimpleConsumer;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.logging.Log;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.LongWritable;
+
+import org.apache.hadoop.mapred.ClusterStatus;
+import org.apache.hadoop.mapred.JobClient;
 import org.apache.hadoop.mapreduce.*;
-import org.apache.hadoop.yarn.util.SystemClock;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -160,6 +161,81 @@ public class KafkaInputFormat extends InputFormat<LongWritable, KafkaMessageWith
     }
 
     /**
+     * Retrieve active servers within the mapreduce cluster
+     *
+     * @param config job configuration
+     *
+     * @return servers list, in format host:port
+     */
+    private String[] getActiveServersList(Configuration config){
+        final String stubserver = "abc.com";
+
+        String [] servers;
+        try {
+            JobClient jc = new JobClient(config);
+            ClusterStatus status = jc.getClusterStatus(true);
+            if(status != null) {
+                Collection<String> atc = status.getActiveTrackerNames();
+                if(atc != null) {
+                    System.out.println("Received active trackers, size = " + atc.size());
+                    servers = new String[atc.size()];
+                    int s = 0;
+                    for (String serverInfo : atc) {
+                        StringTokenizer st = new StringTokenizer(serverInfo, ":");
+                        String trackerName = st.nextToken();
+                        StringTokenizer st1 = new StringTokenizer(trackerName, "_");
+                        st1.nextToken();
+                        String server = st1.nextToken();
+                        servers[s++] = server;
+                    }
+                    if (atc.size() == 0) {
+                        System.out.println("No cluster information received");
+                        servers = new String[1];
+                        servers[0] = stubserver;
+                    }
+                }
+                else{
+                    System.out.println("Active trackers are null");
+                    servers = new String[1];
+                    servers[0] = stubserver;
+                }
+            }
+            else{
+                System.out.println("Cluster status is null");
+                servers = new String[1];
+                servers[0] = stubserver;
+            }
+        }catch (IOException e) {
+            System.out.println("KafkaInputFormat : IOException in getActiveServersList()");
+            e.printStackTrace();
+            servers = new String[1];
+            servers[0] = stubserver;
+        }
+        catch (Exception e) {
+            System.out.println("KafkaInputFormat : Exception in getActiveServersList()");
+            e.printStackTrace();
+            servers = new String[1];
+            servers[0] = stubserver;
+        }
+
+        return servers;
+    }
+
+    /**
+     * Retrieve next server index from the list of known (round trip)
+     * @param current current index
+     * @param max     number of servers in the list
+     *
+     * @return next server index
+     */
+    private static int getNextServer(int current, int max){
+        current++;
+        if(current >= max)
+            current = 0;
+        return current;
+    }
+
+    /**
      * Gets all of the input splits for the {@code topic}, filtering out any {@link InputSplit}s already consumed by the
      * {@code group}.
      * 
@@ -174,6 +250,15 @@ public class KafkaInputFormat extends InputFormat<LongWritable, KafkaMessageWith
      */
     List<InputSplit> getInputSplits(final Configuration conf, final String topic, final String group)
             throws IOException {
+        /* get servers in the cluster, we will eventually distribute the splits onto mapreduce environment available locations
+           as we will not have data locality with remote Kafka cluster anyway
+         */
+        String[] servers = getActiveServersList(conf);
+        if(servers == null)
+            return null;
+
+        int currentServer = 0;
+
         final List<InputSplit> splits = Lists.newArrayList();
         final ZkUtils zk = getZk(conf);
         final Map<Broker, SimpleConsumer> consumers = Maps.newHashMap();
@@ -197,6 +282,7 @@ public class KafkaInputFormat extends InputFormat<LongWritable, KafkaMessageWith
                     LOG.debug("" + offset);
                 }
 
+                String mapredServer = servers.length > 0 ? servers[currentServer] : "";
 
                 if(splittingDisabled){
                     // ( offsets in descending order )
@@ -206,7 +292,12 @@ public class KafkaInputFormat extends InputFormat<LongWritable, KafkaMessageWith
                     // the single split is always partition committer
                     final boolean partitionCommitter = true;
                     // create single split with the min offset as the start and max offset as the end
-                    final InputSplit split = new KafkaMultiOffsetSplit(partition, start, end, partitionCommitter, Lists.reverse(offsets));
+                    final InputSplit split = new KafkaMultiOffsetSplit(partition,
+                            start,
+                            end,
+                            partitionCommitter,
+                            Lists.reverse(offsets),
+                            mapredServer);
 
                     LOG.debug("Created multi-offset input split: " + split);
                     splits.add(split);
@@ -219,12 +310,19 @@ public class KafkaInputFormat extends InputFormat<LongWritable, KafkaMessageWith
                         // since the offsets are in descending order, the first offset in the list is the largest offset for
                         // the current partition. This split will be in charge of committing the offset for this partition.
                         final boolean partitionCommitter = (i == 0);
-                        final InputSplit split = new KafkaInputSplit(partition, start, end, partitionCommitter);
+                        final InputSplit split = new KafkaInputSplit(partition,
+                                start,
+                                end,
+                                partitionCommitter,
+                                mapredServer);
                         LOG.debug("Created input split: " + split);
                         splits.add(split);
                     }
                 }
-                            }
+
+                // get next server in mapreduce environment
+                currentServer = getNextServer(currentServer, servers.length);
+            }
         } finally {
             // close resources
             IOUtils.closeQuietly(zk);

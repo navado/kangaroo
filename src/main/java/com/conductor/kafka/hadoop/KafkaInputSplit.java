@@ -38,18 +38,21 @@ public class KafkaInputSplit extends InputSplit implements Writable {
     protected long endOffset;
     protected boolean partitionCommitter;
 
-    /**
-     * The {@link Writable} constructor; use {@link #KafkaInputSplit(Partition, long, long, boolean)}.
-     */
+    protected String location = "";
+
+        /**
+         * The {@link Writable} constructor; use {@link #KafkaInputSplit(Partition, long, long, boolean, String)}.
+         */
     public KafkaInputSplit() {
     }
 
     public KafkaInputSplit(final Partition partition, final long startOffset, final long endOffset,
-            final boolean partitionCommitter) {
+            final boolean partitionCommitter, String location) {
         this.partition = partition;
         this.startOffset = startOffset;
         this.endOffset = endOffset;
         this.partitionCommitter = partitionCommitter;
+        this.location = location;
     }
 
     @Override
@@ -76,7 +79,7 @@ public class KafkaInputSplit extends InputSplit implements Writable {
 
     @Override
     public String[] getLocations() throws IOException, InterruptedException {
-        return new String[] { toString() };
+        return new String[] { location };
     }
 
     public Partition getPartition() {
