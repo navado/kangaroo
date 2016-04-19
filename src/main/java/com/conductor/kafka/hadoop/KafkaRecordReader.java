@@ -221,7 +221,7 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
         if(this.multiOffset){
             /* try to shift the offset to next one reported by Kafka */
             KafkaMultiOffsetSplit multiOffsetSplit = (KafkaMultiOffsetSplit)split;
-            boolean shouldShiftOffset = (multiOffsetSplit.getCurrentOffsetUpperLimit() - pos) == 1;
+            boolean shouldShiftOffset = (multiOffsetSplit.getCurrentOffsetUpperLimit() - pos) == 0;
             if(shouldShiftOffset) {
                 long nextOffset = multiOffsetSplit.shiftOffset();
                 LOG.debug("Shifting offset, pos = " + pos + "; nextOffset = " + nextOffset);
