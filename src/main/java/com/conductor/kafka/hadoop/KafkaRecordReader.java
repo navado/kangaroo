@@ -113,9 +113,11 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
     @Override
     public void close() throws IOException {
         consumer.close();
+        boolean temp_commit = true;
         if (split.isPartitionCommitter()) {
-            commitOffset();
+            temp_commit = false;
         }
+        commitOffset(temp_commit);
     }
 
     /**
@@ -238,7 +240,7 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
     }
 
     @VisibleForTesting
-    void commitOffset() throws IOException {
+    void commitOffset(boolean temp) throws IOException {
         ZkUtils zk = null;
         try {
             zk = getZk();
@@ -248,10 +250,7 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
              * into a bad state if this split finished successfully and committed the offset while another input split
              * from the same partition didn't finish successfully.
              */
-        boolean flag = true;
-        if(multiOffset)
-            flag = false;
-            zk.setLastCommit(getConsumerGroup(conf), split.getPartition(), pos, flag);
+            zk.setLastCommit(getConsumerGroup(conf), split.getPartition(), pos, temp);
         } finally {
             IOUtils.closeQuietly(zk);
         }
