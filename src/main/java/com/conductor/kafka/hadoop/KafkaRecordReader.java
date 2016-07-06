@@ -248,7 +248,10 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
              * into a bad state if this split finished successfully and committed the offset while another input split
              * from the same partition didn't finish successfully.
              */
-            zk.setLastCommit(getConsumerGroup(conf), split.getPartition(), pos, true);
+        boolean flag = true;
+        if(multiOffset)
+            flag = false;
+            zk.setLastCommit(getConsumerGroup(conf), split.getPartition(), pos, flag);
         } finally {
             IOUtils.closeQuietly(zk);
         }
