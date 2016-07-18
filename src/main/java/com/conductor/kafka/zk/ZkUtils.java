@@ -36,7 +36,6 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Ranges;
 
 /**
  * This class wraps some of the Kafka interactions with Zookeeper, namely {@link Broker} and {@link Partition} queries,
@@ -162,19 +161,42 @@ public class ZkUtils implements Closeable {
      */
     public List<Partition> getPartitions(final String topic) {
         final List<Partition> partitions = Lists.newArrayList();
+
+        // Measure time
+        long startTime = System.currentTimeMillis();
+        final String methodGC = "getChildrenParentMayNotExist";
         final List<String> parts = getChildrenParentMayNotExist(getTopicPartitions(topic));
+        long stopTime = System.currentTimeMillis();
+
+        long elapsedTime = stopTime - startTime;
+        System.out.println("Topic \"" + topic + "\" : " + methodGC + " took " + elapsedTime);
+
+        final String methodReadData = "client.readData (get topic partition state)";
+        final String methodGetBroker = "client.readData (get broker)";
+
         for (final String partitionId : parts) {
             final Integer pId = Integer.valueOf(partitionId);
+
+            startTime = System.currentTimeMillis();
             final String data = client.readData(getTopicPartitionState(topic, pId));
+            stopTime = System.currentTimeMillis();
+            elapsedTime = stopTime - startTime;
+            System.out.println("Topic \"" + topic + "\" : " + methodReadData + " took " + elapsedTime);
 
             // parse json metadata
             JSONObject obj = new JSONObject(data);
             Integer leader = obj.getInt("leader");
 
+            startTime = System.currentTimeMillis();
             final Broker broker = getBroker(leader);
+            stopTime = System.currentTimeMillis();
+            elapsedTime = stopTime - startTime;
+            System.out.println("Topic \"" + topic + "\" : " + methodGetBroker + " took " + elapsedTime);
+
             assert leader != null;
             partitions.add(new Partition(topic, pId, broker));
         }
+
         return partitions;
     }
 
@@ -284,6 +306,26 @@ public class ZkUtils implements Closeable {
     String getOffsetsPath(String group, Partition partition) {
         return format("%s/kangaroo-consumers/%s/offsets/%s/%s", zkRoot, group, partition.getTopic(),
                 partition.getBrokerPartition());
+    }
+
+    @VisibleForTesting
+    /**
+     * Gеt the consumer group path in Zookeeper
+     */
+    public String getConsumerGroupPath(String group) {
+        return format("%s/kangaroo-consumers/%s", zkRoot, group);
+    }
+
+    /**
+     * Deletes ZK path
+     * @param path      path to delete
+     * @param recursive flag, indicates whether recursive deletion is requested
+     */
+    public void deleteZkPath(String path, boolean recursive){
+        if(recursive)
+            client.deleteRecursive(path);
+        else
+            client.delete(path);
     }
 
     @VisibleForTesting
