@@ -32,11 +32,8 @@ import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.*;
-import org.apache.hadoop.yarn.util.SystemClock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import scala.collection.Iterator;
 
 import com.conductor.kafka.zk.ZkUtils;
 import com.google.common.annotations.VisibleForTesting;
@@ -188,7 +185,7 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
         final long remaining = end - pos - 1; // // we exclude the last element. A split 10-20 means elements from 10 to 19.
 
         if (!canCallNext() && (remaining > 0 || first)) {
-            handleMultiOffsetSplit();
+            handleMultiOffsetSplit(first);
             first = false;
             LOG.debug(String.format("%s fetching %d bytes starting at offset %d",
                     split.toString(), fetchSize, pos));
@@ -218,7 +215,10 @@ public class KafkaRecordReader extends RecordReader<LongWritable, KafkaMessageWi
         return getCurrentMessageItr() != null && getCurrentMessageItr().y != null && getCurrentMessageItr().y.hasNext();
     }
 
-    void handleMultiOffsetSplit(){
+    void handleMultiOffsetSplit(boolean firstMultipart){
+        if(firstMultipart)
+            return;
+
         /* if the split we handle is multi-offset split */
         if(this.multiOffset){
             /* try to shift the offset to next one reported by Kafka */
